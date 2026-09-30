@@ -359,6 +359,40 @@
       s.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
     }
 
+    /* Last resort: compose the application as an email so it can never be lost,
+       whether the backend is missing, misconfigured or simply unreachable. */
+    function emailFallback(entry, first, noteText) {
+      try {
+        var log = JSON.parse(localStorage.getItem("pf_submissions") || "[]");
+        log.push(entry);
+        localStorage.setItem("pf_submissions", JSON.stringify(log));
+      } catch (err) { /* private mode */ }
+      console.warn("[Prime Face] falling back to email for submission:", entry);
+      var lines = [
+        "NEW MODEL APPLICATION",
+        "",
+        "Name: " + entry.name.trim(),
+        "Email: " + entry.email,
+        "Phone: " + entry.phone,
+        "City: " + entry.city,
+        "Division: " + entry.division,
+        "Height: " + (entry.height ? entry.height + " cm" : ""),
+        "Instagram: " + entry.instagram,
+        "",
+        "About: " + entry.about,
+        "",
+        "Digitals: " + (entry.photos.length
+          ? entry.photos.join(", ") + " — ask the applicant to attach these"
+          : "none uploaded")
+      ].join("\n");
+      window.location.href = "mailto:info@theprimefacemodels.com?subject=" +
+        encodeURIComponent("New model application — " + entry.name.trim()) +
+        "&body=" + encodeURIComponent(lines);
+      var note = $("#success-note");
+      if (note && noteText) note.textContent = noteText;
+      succeed(first);
+    }
+
     form.addEventListener("submit", function (e) {
       e.preventDefault();
       showError("");
@@ -386,42 +420,11 @@
       };
       var first = (data.get("first") || "").trim().split(" ")[0] || "friend";
 
-      /* ---- No endpoint configured yet: hand the application over by email
-             so nothing is ever silently lost while the backend is wired up ---- */
+      /* ---- Safety net: no backend configured, hand it over by email ---- */
       if (!FORM_ENDPOINT) {
-        try {
-          var log = JSON.parse(localStorage.getItem("pf_submissions") || "[]");
-          log.push(entry);
-          localStorage.setItem("pf_submissions", JSON.stringify(log));
-        } catch (err) { /* private mode */ }
-        console.warn("[Prime Face] FORM_ENDPOINT is empty — falling back to email. See FORM-SETUP.md.");
-        var lines = [
-          "NEW MODEL APPLICATION",
-          "",
-          "Name: " + entry.name.trim(),
-          "Email: " + entry.email,
-          "Phone: " + entry.phone,
-          "City: " + entry.city,
-          "Division: " + entry.division,
-          "Height: " + (entry.height ? entry.height + " cm" : ""),
-          "Instagram: " + entry.instagram,
-          "",
-          "About: " + entry.about,
-          "",
-          "Digitals: " + (entry.photos.length
-            ? entry.photos.join(", ") + " — ask the applicant to attach these"
-            : "none uploaded")
-        ].join("\n");
-        window.location.href = "mailto:info@theprimefacemodels.com?subject=" +
-          encodeURIComponent("New model application — " + entry.name.trim()) +
-          "&body=" + encodeURIComponent(lines);
-        var note = $("#success-note");
-        if (note) {
-          note.textContent = "We've opened your email app so your application reaches us directly — "
-            + "please attach three digitals before sending. If nothing opened, email "
-            + "info@theprimefacemodels.com.";
-        }
-        succeed(first);
+        emailFallback(entry, first,
+          "We've opened your email app so your application reaches us directly — please attach "
+          + "three digitals before sending. If nothing opened, email info@theprimefacemodels.com.");
         return;
       }
 
@@ -447,7 +450,9 @@
           })
           .catch(function () {
             setLoading(false);
-            showError("Could not reach the server. Please email info@theprimefacemodels.com.");
+            emailFallback(entry, first,
+              "Our system didn't respond, so we've opened your email app — send it from there "
+              + "with three digitals attached. Sorry about that.");
           });
         return;
       }
@@ -471,7 +476,9 @@
         }
       }).catch(function () {
         setLoading(false);
-        showError("Network error — check your connection, or email info@theprimefacemodels.com.");
+        emailFallback(entry, first,
+          "Our system didn't respond, so we've opened your email app — send it from there "
+          + "with three digitals attached. Sorry about that.");
       });
     });
   }
