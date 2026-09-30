@@ -11,7 +11,7 @@
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://theprimefacemodels.com/assets/img/hero-1080.webp">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230B0B0C'/><text x='16' y='23' font-family='Georgia,serif' font-size='17' fill='%23F4F1EC' text-anchor='middle'>PF</text></svg>">
-<link rel="stylesheet" href="assets/css/style.css?v=838255ee">
+<link rel="stylesheet" href="assets/css/style.css?v=15757b6a">
 <link rel="preload" as="image" href="assets/img/hero-1080.webp?v=d51aaf78" imagesrcset="assets/img/hero-720.webp 720w, assets/img/hero-1080.webp 1080w, assets/img/hero-1440.webp 1440w" imagesizes="100vw" fetchpriority="high">
 </head>
 <body>
@@ -483,11 +483,15 @@
       </form>
 
       <div class="success" role="status" aria-live="polite">
-        <div class="tick">&#10003;</div>
+        <div class="tick" id="success-tick">&#10003;</div>
         <h3>Received, <span id="success-name">friend</span>.</h3>
         <p id="success-note">Your digitals are with our scouting team. You'll hear from us within 72 hours —
           check your spam folder just in case.</p>
-        <a href="#roster" class="btn btn--ghost">Browse the board</a>
+        <p id="success-status" hidden><span class="spin" aria-hidden="true"></span><span id="success-status-text">Sending your photos…</span></p>
+        <div class="success__actions">
+          <a href="#roster" class="btn btn--ghost">Browse the board</a>
+          <button type="button" class="btn" id="retry-btn" hidden>Try again</button>
+        </div>
       </div>
     </div>
   </div>
@@ -613,6 +617,6 @@
 
 <div class="cursor-badge" aria-hidden="true">View</div>
 
-<script src="assets/js/app.js?v=80f0fe9d" defer></script>
+<script src="assets/js/app.js?v=58a6c7d9" defer></script>
 </body>
 </html>

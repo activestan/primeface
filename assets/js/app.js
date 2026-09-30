@@ -16,24 +16,39 @@
      ---------------------------------------------------------- */
   var FORM_ENDPOINT = "https://script.google.com/macros/s/AKfycbxKZfBHhb73d4VwUzy2zng4ae3W2pL3Jgkcfo6uzaHjTa1ngAiZC-KsJnHo7ddvLh8/exec";
 
-  /* Downscale + base64-encode an image (used by the Google Sheets option,
-     which receives JSON rather than multipart form data). */
-  function compressImage(file, maxDim) {
-    maxDim = maxDim || 1400;
+  /* Show "Received" as soon as the photos are ready instead of waiting for the
+     server. Set to false to wait for confirmation before showing anything. */
+  var OPTIMISTIC_UI = true;
+
+  /* Shrink each photo for upload. Steps down in size and quality until it fits
+     the per-photo budget, so three phone snaps can't become a 3 MB upload.
+     JPEG (not WebP) so the Apps Script needs no change. */
+  var PHOTO_MAX_BYTES = 220 * 1024;   // base64 characters per photo
+  var PHOTO_STEPS = [[1200, 0.72], [1000, 0.62], [820, 0.52], [640, 0.45]];
+  function compressImage(file) {
     return new Promise(function (resolve) {
       var img = new Image();
       var url = URL.createObjectURL(file);
       img.onload = function () {
-        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        var c = document.createElement("canvas");
-        c.width = Math.round(img.width * scale);
-        c.height = Math.round(img.height * scale);
-        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-        var data = c.toDataURL("image/jpeg", 0.82).split(",")[1];
+        var out = null;
+        for (var i = 0; i < PHOTO_STEPS.length; i++) {
+          var dim = PHOTO_STEPS[i][0], q = PHOTO_STEPS[i][1];
+          var scale = Math.min(1, dim / Math.max(img.width, img.height));
+          var c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(img.width * scale));
+          c.height = Math.max(1, Math.round(img.height * scale));
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          var data = c.toDataURL("image/jpeg", q).split(",")[1];
+          out = { name: file.name, type: "image/jpeg", data: data, w: c.width, h: c.height };
+          if (data.length <= PHOTO_MAX_BYTES) break;   // good enough, stop early
+        }
         URL.revokeObjectURL(url);
-        resolve({ name: file.name, data: data });
+        resolve(out);
       };
-      img.onerror = function () { URL.revokeObjectURL(url); resolve({ name: file.name, data: "" }); };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        resolve({ name: file.name, type: "image/jpeg", data: "", w: 0, h: 0 });
+      };
       img.src = url;
     });
   }
@@ -342,26 +357,52 @@
     var submitBtn = $("button[type=submit]", form);
     var errBox = $("#form-error");
     var btnLabel = submitBtn.innerHTML;
+    var statusEl = $("#success-status");
+    var statusText = $("#success-status-text");
+    var tickEl = $("#success-tick");
 
-    function setLoading(on) {
+    function setLoading(on, label) {
       submitBtn.classList.toggle("is-loading", on);
-      submitBtn.innerHTML = on ? "Sending…" : btnLabel;
+      submitBtn.innerHTML = on && label ? label : btnLabel;
     }
     function showError(msg) {
       if (!errBox) return;
       errBox.textContent = msg;
       errBox.hidden = !msg;
     }
-    function succeed(name) {
-      $("#success-name").textContent = name;
+
+    /* honest status line inside the success panel */
+    function setStatus(state) {
+      if (!statusEl) return;
+      statusEl.hidden = state === "hidden";
+      statusEl.classList.remove("is-sending", "is-sent", "is-error");
+      if (state === "sending") {
+        statusEl.classList.add("is-sending");
+        if (statusText) statusText.textContent = "Sending your photos\u2026";
+      } else if (state === "sent") {
+        statusEl.classList.add("is-sent");
+        if (statusText) statusText.textContent = "Delivered \u2714";
+      } else if (state === "failed") {
+        statusEl.classList.add("is-error");
+        if (statusText) statusText.textContent = "Not sent \u2014 nothing has reached us yet.";
+      }
+    }
+
+    /* Make the browser ask before the tab closes mid-upload. */
+    var unloadGuard = function (e) { e.preventDefault(); e.returnValue = ""; };
+    function guardOn() { window.addEventListener("beforeunload", unloadGuard); }
+    function guardOff() { window.removeEventListener("beforeunload", unloadGuard); }
+
+    function succeed(first, state) {
+      $("#success-name").textContent = first;
       form.style.display = "none";
       var s = $(".success");
       s.classList.add("is-on");
+      setStatus(state || "hidden");
       s.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
     }
 
-    /* Last resort: compose the application as an email so it can never be lost,
-       whether the backend is missing, misconfigured or simply unreachable. */
+    /* Last resort: compose the application as an email so it can never be lost. */
     function emailFallback(entry, first, noteText) {
       try {
         var log = JSON.parse(localStorage.getItem("pf_submissions") || "[]");
@@ -370,29 +411,83 @@
       } catch (err) { /* private mode */ }
       console.warn("[Prime Face] falling back to email for submission:", entry);
       var lines = [
-        "NEW MODEL APPLICATION",
-        "",
+        "NEW MODEL APPLICATION", "",
         "Name: " + entry.name.trim(),
         "Email: " + entry.email,
         "Phone: " + entry.phone,
         "City: " + entry.city,
         "Division: " + entry.division,
         "Height: " + (entry.height ? entry.height + " cm" : ""),
-        "Instagram: " + entry.instagram,
-        "",
-        "About: " + entry.about,
-        "",
+        "Instagram: " + entry.instagram, "",
+        "About: " + entry.about, "",
         "Digitals: " + (entry.photos.length
           ? entry.photos.map(function (p) { return typeof p === "string" ? p : p.name; }).join(", ")
-            + " — ask the applicant to attach these"
+            + " \u2014 ask the applicant to attach these"
           : "none uploaded")
       ].join("\n");
+      guardOff();
       window.location.href = "mailto:info@theprimefacemodels.com?subject=" +
-        encodeURIComponent("New model application — " + entry.name.trim()) +
+        encodeURIComponent("New model application \u2014 " + entry.name.trim()) +
         "&body=" + encodeURIComponent(lines);
       var note = $("#success-note");
       if (note && noteText) note.textContent = noteText;
-      succeed(first);
+      succeed(first, "hidden");
+    }
+
+    /* One send attempt. Resolves true only if the server confirmed receipt. */
+    function send(entry, data) {
+      setStatus("sending");
+      guardOn();
+      var isScript = FORM_ENDPOINT.indexOf("script.google.com") > -1;
+      var opts = isScript
+        ? { method: "POST", body: JSON.stringify(entry), headers: { "Content-Type": "text/plain;charset=utf-8" } }
+        : { method: "POST", body: data, headers: { Accept: "application/json" } };
+      return fetch(FORM_ENDPOINT, opts)
+        .then(function (r) {
+          if (!isScript) return { ok: r.ok, msg: null };
+          return r.json()
+            .then(function (d) { return { ok: !!(d && d.result === "success"), msg: d && d.message }; })
+            .catch(function () { return { ok: r.ok, msg: null }; });
+        })
+        .then(function (res) {
+          guardOff();
+          if (res.ok) { setStatus("sent"); return true; }
+          setStatus("failed");
+          var s = $(".success"); if (s) s.classList.add("is-error");
+          if (tickEl) tickEl.innerHTML = "!";
+          showError(res.msg || "Something went wrong on our side. Please try again.");
+          return false;
+        })
+        .catch(function () {
+          guardOff();
+          setStatus("failed");
+          var s = $(".success"); if (s) s.classList.add("is-error");
+          if (tickEl) tickEl.innerHTML = "!";
+          showError("Couldn\u2019t reach our system. Please try again.");
+          return false;
+        });
+    }
+
+    function attemptSend(entry, data, first) {
+      var retry = $("#retry-btn");
+      return send(entry, data).then(function (ok) {
+        if (ok) { if (retry) retry.hidden = true; return true; }
+        if (retry) {
+          retry.hidden = false;
+          retry.onclick = function () {
+            retry.hidden = true;
+            var s = $(".success"); if (s) s.classList.remove("is-error");
+            if (tickEl) tickEl.innerHTML = "\u2713";
+            showError("");
+            setLoading(true, "Sending\u2026");
+            attemptSend(entry, data, first).then(function () {
+              setLoading(false);
+              if ($("#success-name")) $("#success-name").textContent = first;
+            });
+          };
+        }
+        return false;
+      });
     }
 
     form.addEventListener("submit", function (e) {
@@ -421,67 +516,40 @@
         photos: chosen.map(function (f) { return f.name; })
       };
       var first = (data.get("first") || "").trim().split(" ")[0] || "friend";
+      if (FORM_ENDPOINT.indexOf("script.google.com") === -1) {
+        data.append("_subject", "New model application \u2014 " + entry.name.trim());
+        data.append("_replyto", entry.email);
+      }
 
-      /* ---- Safety net: no backend configured, hand it over by email ---- */
+      /* ---- no backend configured: straight to email ---- */
       if (!FORM_ENDPOINT) {
         emailFallback(entry, first,
-          "We've opened your email app so your application reaches us directly — please attach "
+          "We\u2019ve opened your email app so your application reaches us directly \u2014 please attach "
           + "three digitals before sending. If nothing opened, email info@theprimefacemodels.com.");
         return;
       }
 
-      /* ---- LIVE MODE ---- */
-      setLoading(true);
+      setLoading(true, chosen.length ? "Preparing photos\u2026" : "Sending\u2026");
 
-      /* Google Apps Script receives JSON with the digitals base64-encoded. */
-      if (FORM_ENDPOINT.indexOf("script.google.com") > -1) {
-        Promise.all(chosen.map(function (file) { return compressImage(file); }))
-          .then(function (files) {
-            entry.photos = files.map(function (f) { return { name: f.name, data: f.data }; });
-            return fetch(FORM_ENDPOINT, {
-              method: "POST",
-              body: JSON.stringify(entry),
-              headers: { "Content-Type": "text/plain;charset=utf-8" }
-            });
-          })
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            setLoading(false);
-            if (d && d.result === "success") succeed(first);
-            else showError((d && d.message) || "Submission failed — please email info@theprimefacemodels.com.");
-          })
-          .catch(function () {
-            setLoading(false);
+      Promise.all(chosen.map(function (file) { return compressImage(file); }))
+        .then(function (files) {
+          entry.photos = files.map(function (f) { return { name: f.name, type: f.type, data: f.data }; });
+          setLoading(false);
+          if (OPTIMISTIC_UI) succeed(first, "sending");   // "Received" now, send continues
+          return attemptSend(entry, data, first);
+        })
+        .then(function (ok) {
+          setLoading(false);
+          if (ok) {
+            if (!OPTIMISTIC_UI) succeed(first, "sent");
+          } else if (!OPTIMISTIC_UI) {
             emailFallback(entry, first,
-              "Our system didn't respond, so we've opened your email app — send it from there "
+              "Our system didn\u2019t respond, so we\u2019ve opened your email app \u2014 send it from there "
               + "with three digitals attached. Sorry about that.");
-          });
-        return;
-      }
-
-      /* Formspree / Web3Forms / Netlify: standard multipart POST */
-      data.append("_subject", "New model application — " + entry.name.trim());
-      data.append("_replyto", entry.email);
-      fetch(FORM_ENDPOINT, {
-        method: "POST",
-        body: data,
-        headers: { Accept: "application/json" }
-      }).then(function (r) {
-        setLoading(false);
-        if (r.ok) { succeed(first); }
-        else {
-          return r.json().then(function (d) {
-            showError((d && (d.error || d.message)) || "Something went wrong. Please email info@theprimefacemodels.com instead.");
-          }).catch(function () {
-            showError("Something went wrong. Please email info@theprimefacemodels.com instead.");
-          });
-        }
-      }).catch(function () {
-        setLoading(false);
-        emailFallback(entry, first,
-          "Our system didn't respond, so we've opened your email app — send it from there "
-          + "with three digitals attached. Sorry about that.");
-      });
+          }
+          // OPTIMISTIC_UI failures: the panel is already visible and now shows
+          // "Not sent" with a Try again button.
+        });
     });
   }
 
