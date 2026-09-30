@@ -14,7 +14,7 @@
      to localStorage and logged to the browser console for testing).
      See FORM-SETUP.md for the three one-minute options.
      ---------------------------------------------------------- */
-  var FORM_ENDPOINT = "";
+  var FORM_ENDPOINT = "https://script.google.com/macros/s/AKfycbxKZfBHhb73d4VwUzy2zng4ae3W2pL3Jgkcfo6uzaHjTa1ngAiZC-KsJnHo7ddvLh8/exec";
 
   /* Downscale + base64-encode an image (used by the Google Sheets option,
      which receives JSON rather than multipart form data). */
