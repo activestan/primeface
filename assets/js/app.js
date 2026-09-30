@@ -286,7 +286,8 @@
       else if (field.hasAttribute("required") && !field.value.trim()) { ok = false; }
       else if (field.type === "email" && field.value && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(field.value)) { ok = false; }
       if (!field.hasAttribute("required") && !field.value.trim() && field.type !== "checkbox") ok = true;
-      wrap.classList.toggle("has-error", !ok);
+      var host = wrap || field.closest(".checkline");
+      if (host) host.classList.toggle("has-error", !ok);
       return ok;
     };
     $$("input,select,textarea", form).forEach(function (f) {
@@ -382,7 +383,8 @@
         "About: " + entry.about,
         "",
         "Digitals: " + (entry.photos.length
-          ? entry.photos.join(", ") + " — ask the applicant to attach these"
+          ? entry.photos.map(function (p) { return typeof p === "string" ? p : p.name; }).join(", ")
+            + " — ask the applicant to attach these"
           : "none uploaded")
       ].join("\n");
       window.location.href = "mailto:info@theprimefacemodels.com?subject=" +
@@ -433,7 +435,7 @@
 
       /* Google Apps Script receives JSON with the digitals base64-encoded. */
       if (FORM_ENDPOINT.indexOf("script.google.com") > -1) {
-        Promise.all(chosen.map(compressImage))
+        Promise.all(chosen.map(function (file) { return compressImage(file); }))
           .then(function (files) {
             entry.photos = files.map(function (f) { return { name: f.name, data: f.data }; });
             return fetch(FORM_ENDPOINT, {
