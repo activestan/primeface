@@ -386,15 +386,41 @@
       };
       var first = (data.get("first") || "").trim().split(" ")[0] || "friend";
 
-      /* ---- DEMO MODE: no endpoint configured ---- */
+      /* ---- No endpoint configured yet: hand the application over by email
+             so nothing is ever silently lost while the backend is wired up ---- */
       if (!FORM_ENDPOINT) {
         try {
           var log = JSON.parse(localStorage.getItem("pf_submissions") || "[]");
           log.push(entry);
           localStorage.setItem("pf_submissions", JSON.stringify(log));
         } catch (err) { /* private mode */ }
-        console.log("%c[Prime Face] DEMO MODE — no FORM_ENDPOINT set.", "color:#FF4A17;font-weight:700");
-        console.log("Submission captured (see FORM-SETUP.md to send it somewhere real):", entry);
+        console.warn("[Prime Face] FORM_ENDPOINT is empty — falling back to email. See FORM-SETUP.md.");
+        var lines = [
+          "NEW MODEL APPLICATION",
+          "",
+          "Name: " + entry.name.trim(),
+          "Email: " + entry.email,
+          "Phone: " + entry.phone,
+          "City: " + entry.city,
+          "Division: " + entry.division,
+          "Height: " + (entry.height ? entry.height + " cm" : ""),
+          "Instagram: " + entry.instagram,
+          "",
+          "About: " + entry.about,
+          "",
+          "Digitals: " + (entry.photos.length
+            ? entry.photos.join(", ") + " — ask the applicant to attach these"
+            : "none uploaded")
+        ].join("\n");
+        window.location.href = "mailto:info@theprimefacemodels.com?subject=" +
+          encodeURIComponent("New model application — " + entry.name.trim()) +
+          "&body=" + encodeURIComponent(lines);
+        var note = $("#success-note");
+        if (note) {
+          note.textContent = "We've opened your email app so your application reaches us directly — "
+            + "please attach three digitals before sending. If nothing opened, email "
+            + "info@theprimefacemodels.com.";
+        }
         succeed(first);
         return;
       }
