@@ -14,7 +14,7 @@
      to localStorage and logged to the browser console for testing).
      See FORM-SETUP.md for the three one-minute options.
      ---------------------------------------------------------- */
-  var FORM_ENDPOINT = "https://script.google.com/macros/s/AKfycbxKZfBHhb73d4VwUzy2zng4ae3W2pL3Jgkcfo6uzaHjTa1ngAiZC-KsJnHo7ddvLh8/exec";
+  var FORM_ENDPOINT = "https://script.google.com/macros/s/AKfycbxVMIalhZUE1mEtOQdLgN7O9r2AO4YBoXFZBvYS2mF9LRTy-GkZQmlbKW-HZujW3RQ/exec";
 
   /* Show "Received" as soon as the photos are ready instead of waiting for the
      server. Set to false to wait for confirmation before showing anything. */
